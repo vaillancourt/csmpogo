@@ -1,0 +1,25 @@
+{
+  "steJulieDomaine": {
+    "type": "box",
+    "min": {
+      "latitude": 45.561277240067625,
+      "longitude": -73.33275571717218
+    },
+    "max": {
+      "latitude": 45.57840798635963,
+      "longitude": -73.31033764547493
+    }
+  },
+  "gUS-HI_Honolulu": {
+    "type": "koji_area",
+    "koji_instance": "gUS-HI_Honolulu"
+  },
+  "gSteJulieDomaine": {
+    "type": "koji_area",
+    "koji_instance": "gSteJulieDomaine"
+  },
+  "goFestChicago": {
+    "type": "koji_area",
+    "koji_instance": "goFestChicago"
+  }
+}

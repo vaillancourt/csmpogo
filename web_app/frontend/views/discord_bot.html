@@ -1,0 +1,74 @@
+<!-- Discord Spammer Bot Tool -->
+<div id="tool_discord_bot" class="tool-panel" style="display: none;">
+  <div class="tool-header">
+    <button class="nav-toggle" aria-label="Menu">☰</button>
+    <h1>Discord Spammer Bot</h1>
+  </div>
+
+  <div class="tool-content">
+    <div class="tool-controls">
+      <!-- Status Badge -->
+      <div class="status-section">
+        <label>Bot Status:</label>
+        <div class="status-badge" id="discord_status_badge" data-state="idle">
+          <span class="status-dot"></span>
+          <span class="status-text">Offline</span>
+        </div>
+        <div id="discord_error_message" class="error-message" style="display: none;"></div>
+      </div>
+
+      <!-- Reload Configs Button -->
+      <div class="form-group">
+        <button id="discord_reload_btn" class="btn btn-secondary">Reload Configurations</button>
+        <small class="form-hint">Load available zones, POIs, and Discord channels from config files</small>
+      </div>
+
+      <!-- Zone Selector -->
+      <div class="form-group">
+        <label for="discord_zone_select">Zone:</label>
+        <select id="discord_zone_select" class="form-input" disabled>
+          <option value="">-- Select a zone --</option>
+        </select>
+      </div>
+
+      <!-- POI Selector -->
+      <div class="form-group">
+        <label for="discord_poi_select">POI (Pokemon Filter):</label>
+        <select id="discord_poi_select" class="form-input" disabled>
+          <option value="">-- Select a POI --</option>
+        </select>
+      </div>
+
+      <!-- Discord Channel Selector -->
+      <div class="form-group">
+        <label for="discord_channel_select">Discord Channel:</label>
+        <select id="discord_channel_select" class="form-input" disabled>
+          <option value="">-- Select a channel --</option>
+        </select>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="form-actions">
+        <button id="discord_start_btn" class="btn btn-success" disabled>Start Bot</button>
+        <button id="discord_stop_btn" class="btn btn-danger" disabled>Stop Bot</button>
+      </div>
+
+      <!-- Additional Info -->
+      <div id="discord_info_section" class="info-section" style="display: none;">
+        <h4>Active Configuration</h4>
+        <div class="info-row">
+          <span class="label">Zone:</span>
+          <span id="discord_info_zone" class="value">-</span>
+        </div>
+        <div class="info-row">
+          <span class="label">POI:</span>
+          <span id="discord_info_poi" class="value">-</span>
+        </div>
+        <div class="info-row">
+          <span class="label">Channel:</span>
+          <span id="discord_info_channel" class="value">-</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

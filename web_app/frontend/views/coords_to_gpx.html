@@ -1,0 +1,43 @@
+<!-- Coordinates to GPX Tool -->
+<div id="tool_coords_to_gpx" class="tool-panel" style="display: none;">
+  <div class="tool-header">
+    <button class="nav-toggle" aria-label="Menu">☰</button>
+    <h1>Coordinates to GPX</h1>
+  </div>
+
+  <div class="tool-content">
+    <div class="tool-controls">
+      <!-- Route Name Input -->
+      <div class="form-group">
+        <label for="gpx_route_name">Route Name:</label>
+        <input
+          type="text"
+          id="gpx_route_name"
+          placeholder="Enter route name (e.g., 'Community Day Route')"
+          class="form-input"
+        />
+      </div>
+
+      <!-- Coordinates Textarea -->
+      <div class="form-group">
+        <label for="gpx_coordinates">Coordinates (one per line, comma-separated lat,lon):</label>
+        <textarea
+          id="gpx_coordinates"
+          placeholder="Example:&#10;40.7128,-74.0060&#10;40.7138,-74.0050&#10;40.7148,-74.0040"
+          class="form-textarea"
+          rows="10"
+        ></textarea>
+        <small class="form-hint">Format: latitude,longitude (one pair per line). Decimals optional.</small>
+      </div>
+
+      <!-- Error/Success Messages -->
+      <div id="gpx_message" class="form-message" style="display: none;"></div>
+
+      <!-- Action Buttons -->
+      <div class="form-actions">
+        <button id="gpx_download_btn" class="btn btn-primary">Download GPX</button>
+        <button id="gpx_clear_btn" class="btn btn-secondary">Clear</button>
+      </div>
+    </div>
+  </div>
+</div>

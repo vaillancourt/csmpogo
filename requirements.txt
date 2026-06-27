@@ -1,0 +1,24 @@
+# Pokémon GO Mapping Web App - Requirements
+
+# Web Framework
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+httpx==0.25.0
+
+# Discord Bot
+discord.py==2.3.2
+
+# Geolocation & S2 Geometry
+s2sphere
+
+# Database (for future implementation)
+sqlalchemy==2.0.0
+pymysql==1.1.0
+
+# Utilities
+python-dotenv==1.0.0
+
+# Development
+pytest==7.4.0
+black==23.12.0
+flake8==6.1.0

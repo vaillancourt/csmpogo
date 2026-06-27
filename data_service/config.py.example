@@ -1,0 +1,22 @@
+# Data Service Configuration
+# Copy this file to config.py and update the values,
+# OR set the corresponding environment variables (recommended for production).
+
+import os
+
+# Database configuration
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "mysql+pymysql://user:password@localhost/pogo_db"
+)
+
+# Koji API configuration
+KOJI_HOST = os.getenv("KOJI_HOST", "192.168.0.247")
+KOJI_PORT = int(os.getenv("KOJI_PORT", "8080"))
+KOJI_TIMEOUT = int(os.getenv("KOJI_TIMEOUT", "10"))
+
+# Data service port
+DATA_SERVICE_PORT = int(os.getenv("DATA_SERVICE_PORT", "5000"))
+
+# Debug mode
+DEBUG = os.getenv("DEBUG", "False").lower() == "true"

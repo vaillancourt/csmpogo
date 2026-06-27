@@ -1,0 +1,17 @@
+"""
+Web App Backend Configuration
+Copy this file to config.py and update the values,
+OR set the corresponding environment variables (recommended for production).
+"""
+
+import os
+
+# Data Ingestion Service URL
+# Update this to match where your data service is running
+DATA_SERVICE_URL = os.getenv("DATA_SERVICE_URL", "http://localhost:5000")
+
+# Web App Backend Port
+WEB_APP_PORT = int(os.getenv("WEB_APP_PORT", "8000"))
+
+# Debug mode
+DEBUG = os.getenv("DEBUG", "False").lower() == "true"

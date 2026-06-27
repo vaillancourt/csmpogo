@@ -1,0 +1,7 @@
+{
+  "token": "YOUR_DISCORD_BOT_TOKEN_HERE",
+  "channels": {
+    "alerts": 123456789012345678,
+    "gofestspawns": 123456789012345678
+  }
+}
