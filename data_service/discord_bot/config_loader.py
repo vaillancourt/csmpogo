@@ -193,7 +193,7 @@ class ConfigLoader:
         {
           "token": "your_bot_token",
           "channels": {
-            "channel_name": 123456789,
+            "channel_name": "123456789",
             ...
           }
         }
@@ -227,13 +227,13 @@ class ConfigLoader:
         if not isinstance(channels, dict):
             raise ValueError("discord.json: 'channels' must be a dict")
 
-        for channel_name, channel_id in channels.items():
-            if not isinstance(channel_id, int):
-                raise ValueError(
-                    f"discord.json: channels.{channel_name} must be an integer channel ID"
-                )
+        #for channel_name, channel_id in channels.items():
+        #    if not isinstance(channel_id, int):
+        #        raise ValueError(
+        #            f"discord.json: channels.{channel_name} must be an integer channel ID"
+        #        )
 
-        logger.info(f"Loaded Discord config with {len(channels)} channel(s)")
+        logger.info("Loaded Discord config with %s channel(s)", len(channels))
         return config
 
 

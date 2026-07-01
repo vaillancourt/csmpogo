@@ -96,7 +96,7 @@ async def get_configs() -> Dict[str, Any]:
         {
             "zones": {"zone_name": {...}, ...},
             "pois": {"poi_name": {...}, ...},
-            "channels": {"channel_name": channel_id, ...}
+            "channels": {"channel_name": "channel_id", ...}
         }
     """
     return await _proxy_request("GET", "configs")
@@ -111,7 +111,7 @@ async def start_bot(request: Dict[str, Any]) -> Dict[str, Any]:
         {
             "zone": "zone_name",
             "poi": "poi_name",
-            "channel_id": 123456789
+            "channel_id": "123456789"
         }
     
     Returns:

@@ -15,15 +15,18 @@ from fastapi.middleware.cors import CORSMiddleware
 # Add parent directory to path for shared module imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
+log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
+    level=getattr(logging, log_level, logging.INFO),
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
 
 from data_service import config
 from data_service.discord_bot.routes import router as discord_bot_router
+from data_service.webhooks.routes import router as webhook_router
 
 # Create FastAPI app
 app = FastAPI(
@@ -44,6 +47,9 @@ app.add_middleware(
 # Include Discord bot internal routes
 app.include_router(discord_bot_router)
 
+# Include Golbat webhook receiver
+app.include_router(webhook_router)
+
 
 @app.get("/health")
 async def health_check():
@@ -63,7 +69,7 @@ async def root():
         "endpoints": {
             "health": "/health",
             "discord_bot": "/internal/discord/...",
-            "webhook": "/webhook (TODO)",
+            "webhook": "/webhook",
         },
     }
 

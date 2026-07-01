@@ -170,7 +170,7 @@ window.DiscordBot = {
    */
   handleChannelChange() {
     const value = document.getElementById("discord_channel_select").value;
-    this.state.channelId = value ? parseInt(value) : null;
+    this.state.channelId = value;
     this.saveState();
     this.updateUIState();
   },

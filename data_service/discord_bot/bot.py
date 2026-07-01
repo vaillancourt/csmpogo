@@ -2,24 +2,27 @@
 Discord Bot Core Logic
 
 Manages the Discord bot thread, state machine, and notification logic.
-Ported from C:\dev\pogo\dataquery\webhook_listener.py
+Ported from C:/dev/pogo/dataquery/webhook_listener.py
 """
 
 import asyncio
+from datetime import datetime
 import json
 import logging
 import threading
 from pathlib import Path
-from typing import Dict, Any, Optional, Callable
+from typing import Dict, Any, Optional, Callable, List
 
 import discord
 from discord.ext import commands
-from s2sphere import Cell, CellId, LatLng
+import s2sphere
+import requests
+
+from data_service import config
 
 from .config_loader import get_loader
 
 logger = logging.getLogger(__name__)
-
 
 class DiscordBotManager:
     """
@@ -44,7 +47,7 @@ class DiscordBotManager:
         self.discord_connected: bool = False
         
         # Cached configuration
-        self.s2_cells: set = set()  # For koji_area zones
+        self.s2_cells: set[int] = set()  # For koji_area zones
         self.pokemon_names: Dict[int, str] = {}  # ID -> name mapping
         self.zones: Dict[str, Dict] = {}
         self.pois: Dict[str, Dict] = {}
@@ -74,7 +77,7 @@ class DiscordBotManager:
             self.state = "starting"
             self.zone = zone
             self.poi = poi
-            self.channel_id = channel_id
+            self.channel_id = int(channel_id)
             self.error_msg = None
             self.discord_connected = False
 
@@ -185,6 +188,7 @@ class DiscordBotManager:
             True if notification was sent, False otherwise
         """
         if self.state != "running":
+            logger.debug("Bot not running, cannot check and notify")
             return False
 
         if not self.discord_client or not self.discord_connected:
@@ -199,30 +203,51 @@ class DiscordBotManager:
             longitude = pokemon_data.get("longitude")
 
             if None in (pokemon_id, latitude, longitude):
-                logger.warning(f"Incomplete pokemon data: {pokemon_data}")
+                logger.warning("Incomplete pokemon data: %s", pokemon_data)
                 return False
+            else:
+                pokemon_id = int(pokemon_id) # type: ignore[reportArgumentType]
+                form = int(form) # type: ignore[reportArgumentType]
+                latitude = float(latitude) # type: ignore[reportArgumentType]
+                longitude = float(longitude) # type: ignore[reportArgumentType]
 
             # Check if in zone
             if not self._is_point_in_zone(latitude, longitude):
+                #logger.debug("Pokemon %s at %s,%s not in zone '%s'", pokemon_id, latitude, longitude, self.zone)
                 return False
 
+            allowed_pokemon = False
             # Check if in allowlist
-            if not self._is_pokemon_in_allowlist(pokemon_id, form):
+            if self._is_pokemon_in_allowlist(pokemon_id, form):
+                allowed_pokemon = True
+            else:
+                logger.debug("Pokemon %s (form %s) not in allowlist", pokemon_id, form)
+
+            if not allowed_pokemon:
+                individual_attack = pokemon_data.get("individual_attack", -1)
+                individual_defense = pokemon_data.get("individual_defense", -1)
+                individual_stamina = pokemon_data.get("individual_stamina", -1)
+
+                if individual_attack == 15 and individual_defense == 15 and individual_stamina == 15:
+                    allowed_pokemon = True
+                    logger.debug("Pokemon %s (form %s) is perfect IVs, allowing notification", pokemon_id, form)
+
+            if not allowed_pokemon:
                 return False
 
             # Send Discord notification
             pokemon_name = self.pokemon_names.get(pokemon_id, f"Pokemon {pokemon_id}")
-            message = self._format_discord_message(pokemon_name, latitude, longitude)
-            self._send_to_discord(message)
+            message_embed = self._format_discord_message(pokemon_name, latitude, longitude)
+            message_sent = self._send_to_discord(message_embed)
 
             logger.info(
-                f"Sent alert: {pokemon_name} (form {form}) at {latitude},{longitude} "
-                f"in zone '{self.zone}' / POI '{self.poi}'"
+                "Sent alert: %s (form %s) at %s,%s in zone '%s' / POI '%s'; result = %s",
+                pokemon_name, form, latitude, longitude, self.zone, self.poi, message_sent
             )
             return True
 
         except Exception as e:
-            logger.error(f"Error in check_and_notify: {e}", exc_info=True)
+            logger.error("Error in check_and_notify: %s", e, exc_info=True)
             return False
 
     def _start_bot_thread(self) -> None:
@@ -247,7 +272,7 @@ class DiscordBotManager:
             async def on_ready():
                 self.discord_connected = True
                 self.state = "running"
-                logger.info(f"Discord bot connected as {self.discord_client.user}")
+                logger.info("Discord bot connected as %s", self.discord_client.user)
 
             # Start the client (blocks until disconnect)
             token = get_loader().reload_configs()["discord"]["token"]
@@ -270,6 +295,8 @@ class DiscordBotManager:
         """
         if not self.zone or self.zone not in self.zones:
             return False
+
+        #logger.debug("Checking point (lat, lon) %s,%s in zone '%s'", latitude, longitude, self.zone)
 
         zone_config = self.zones[self.zone]
         zone_type = zone_config.get("type")
@@ -303,12 +330,15 @@ class DiscordBotManager:
 
     def _is_point_in_s2_cells(self, latitude: float, longitude: float) -> bool:
         """Check if point's S2 cell is in the cached set."""
+        s2_level = 15  # Hardcoded for now; could be configurable
         try:
-            lat_lng = LatLng.from_degrees(latitude, longitude)
-            cell = Cell(CellId.from_lat_lng(lat_lng).parent(15))  # Level 15
-            return cell.id().id() in self.s2_cells
+            lat_lng = s2sphere.LatLng.from_degrees(latitude, longitude)
+            cell = s2sphere.Cell(s2sphere.CellId.from_lat_lng(lat_lng).parent(s2_level))
+            cell_id = int(cell.id().id())
+            #logger.debug("Point (lat, lon) %s,%s maps to S2 cell ID %s", latitude, longitude, cell_id)
+            return cell_id in self.s2_cells
         except Exception as e:
-            logger.error(f"Error checking S2 cell: {e}")
+            logger.error("Error checking S2 cell: %s", e)
             return False
 
     def _is_pokemon_in_allowlist(self, pokemon_id: int, form: int) -> bool:
@@ -325,74 +355,161 @@ class DiscordBotManager:
 
         return False
 
-    def _format_discord_message(self, pokemon_name: str, latitude: float, longitude: float) -> str:
+    def _format_discord_message(self, pokemon_name: str, latitude: float, longitude: float) -> discord.Embed:
         """
         Create a Discord embed for a Pokemon alert.
         
         Returns:
-            JSON-serialized Discord embed dict
+            Discord embed object
         """
-        gmaps_url = f"https://maps.google.com/?q={latitude},{longitude}"
 
-        embed = {
-            "title": f"🔴 {pokemon_name} Spotted in {self.zone}",
-            "color": 16711680,  # Red
-            "fields": [
-                {
-                    "name": "Location",
-                    "value": f"[{latitude:.4f}, {longitude:.4f}]({gmaps_url})",
-                    "inline": False,
-                }
-            ],
-            "timestamp": None,  # Will be set by Discord
-        }
+        maps_url = f"https://maps.google.com/maps?q={latitude},{longitude}"
+        zone_name = self.zone if self.zone else "Unknown Zone"
+
+        # Create embed
+        embed = discord.Embed(
+            title=f"🔴 {pokemon_name} Spotted in {zone_name}",
+            color=discord.Color.red(),
+            timestamp=datetime.now()
+        )
+
+        # embed.add_field(
+        #     name="📍 Location",
+        #     value=f"Zone: **{zone_name}**",
+        #     inline=False
+        # )
+
+        embed.add_field(
+            name=f"{latitude:.6f}, {longitude:.6f}",
+            value=f"[Open in Google Maps]({maps_url})",
+            inline=False
+        )
+
+
+        # embed = {
+        #     "title": f"🔴 {pokemon_name} Spotted in {self.zone}",
+        #     "color": 16711680,  # Red
+        #     "fields": [
+        #         {
+        #             "name": "Location",
+        #             "value": f"[{latitude:.4f}, {longitude:.4f}]({gmaps_url})",
+        #             "inline": False,
+        #         }
+        #     ],
+        #     "timestamp": None,  # Will be set by Discord
+        # }
 
         return embed
 
-    def _send_to_discord(self, embed_dict: Dict[str, Any]) -> bool:
+    def _send_to_discord(self, embed: discord.Embed) -> bool:
         """
         Send an embed to Discord asynchronously.
         
         Args:
-            embed_dict: Embed data dict
+            embed: Discord embed object
             
         Returns:
             True if sent successfully
         """
         if not self.bot_loop or not self.discord_client or not self.channel_id:
+            logger.debug("Discord client or channel not ready for sending message")
             return False
 
         async def send():
             try:
                 channel = self.discord_client.get_channel(self.channel_id)
                 if not channel:
-                    logger.error(f"Channel {self.channel_id} not found")
+                    logger.error("Channel %s not found", self.channel_id)
                     return False
 
-                embed = discord.Embed.from_dict(embed_dict)
                 await channel.send(embed=embed)
                 return True
             except Exception as e:
-                logger.error(f"Failed to send Discord message: {e}")
+                logger.error("Failed to send Discord message: %s", e, exc_info=True)
                 return False
 
         try:
+            logger.debug("Sending message to Discord channel %s", self.channel_id)
             future = asyncio.run_coroutine_threadsafe(send(), self.bot_loop)
             return future.result(timeout=5)
         except Exception as e:
-            logger.error(f"Error sending Discord message: {e}")
+            logger.error("Error sending Discord message: %s", e, exc_info=True)
             return False
+
+
+    def coordinates_to_s2_cell_id(self, lat: float, lon: float, level: int = 15) -> int:
+        """Convert latitude and longitude to S2 cell ID at specified level."""
+        lat_lng = s2sphere.LatLng.from_degrees(lat, lon)
+        cell_id = s2sphere.CellId.from_lat_lng(lat_lng)
+
+        if level < 30:
+            cell_id = cell_id.parent(level)
+        
+        return cell_id.id()
 
     def _fetch_s2_cells_from_koji(self, koji_instance: str) -> None:
         """
         Fetch S2 cells from Koji API for a koji_area zone.
-        
-        TODO: Implement actual Koji API call.
-        For now, this is a stub that can be called but does nothing.
         """
-        logger.info(f"TODO: Fetch S2 cells from Koji instance '{koji_instance}'")
-        # Would call Koji API and populate self.s2_cells
-        pass
+
+        #koji_config = config.get('koji', {})
+        host = config.KOJI_HOST
+        port = config.KOJI_PORT
+        timeout = config.KOJI_TIMEOUT
+        s2_level : int = 15  # Hardcoded for now; could be configurable
+
+        try:
+            url = f"http://{host}:{port}/api/v1/calc/bootstrap"
+
+            payload : dict[str, str | int] = {
+                "instance": koji_instance,
+                "calculation_mode": "s2",
+                "s2_level": s2_level,
+                "s2_size": 1,
+                "sort_by": "S2Cell"
+            }
+
+            logger.debug("Fetching S2 cells from Koji for instance '%s'...", koji_instance)
+            logger.debug("  Koji URL: %s", url)
+            logger.debug("  Payload: %s", payload)
+
+            response = requests.post(url, json=payload, timeout=timeout)
+            response.raise_for_status()
+
+            data = response.json()
+
+            if data.get('status') != 'ok':
+                logger.error("Koji API error: %s", data.get('message', 'Unknown error'))
+                raise Exception(f"Koji API returned status: {data.get('status')}")
+
+            coordinates = data.get('data', [])
+            logger.info("  Received %d coordinates from Koji", len(coordinates))
+
+            # Convert each coordinate to S2 cell ID
+            s2_cells : set[int] = set()
+            for coord in coordinates:
+                if isinstance(coord, (list, tuple)) and len(coord) >= 2:
+                    lat = float(coord[0])
+                    lon = float(coord[1])
+                    cell_id = self.coordinates_to_s2_cell_id(lat, lon, s2_level)
+                    s2_cells.add(cell_id)
+
+            logger.debug("  Converted to %d unique S2 cells at level %d", len(s2_cells), s2_level)
+
+            if logger.level <= logging.DEBUG:
+                logger.debug("  S2 Cells: %s", list(s2_cells))
+
+            self.s2_cells = s2_cells
+
+        except requests.exceptions.Timeout:
+            logger.error("Timeout fetching S2 cells from Koji (timeout: %ds)", timeout)
+            raise
+        except requests.exceptions.RequestException as e:
+            logger.error("Request error fetching S2 cells from Koji: %s", e)
+            raise
+        except Exception as e:
+            logger.error("Error fetching S2 cells from Koji: %s", e)
+            raise
 
     def _load_pokemon_names(self) -> None:
         """

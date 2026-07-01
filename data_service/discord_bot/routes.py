@@ -65,11 +65,11 @@ async def start_bot(request: Dict[str, Any]) -> Dict[str, Any]:
         if not all([zone, poi, channel_id]):
             raise HTTPException(status_code=400, detail="Missing required fields: zone, poi, channel_id")
 
-        if not isinstance(channel_id, int):
-            raise HTTPException(status_code=400, detail="channel_id must be an integer")
+        # if not isinstance(channel_id, int):
+        #     raise HTTPException(status_code=400, detail="channel_id must be an integer")
 
         bot_manager = get_bot_manager()
-        status = bot_manager.start_bot(zone, poi, channel_id)
+        status = bot_manager.start_bot(zone, poi, int(channel_id))
         
         if status["state"] == "error":
             raise HTTPException(status_code=400, detail=status.get("error_msg"))

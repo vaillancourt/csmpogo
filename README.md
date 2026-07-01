@@ -1,115 +1,97 @@
-# Pokémon GO Mapping Web App - Implementation Guide
+# Pokémon GO Companion Tools
 
-## Overview
+A small self-hosted web app for Pokémon GO mapping utilities, currently offering:
 
-This is the implementation of two web app tools as specified in `projectDescription.md`:
-1. **Coordinates-to-GPX** — Converts user-entered coordinate pairs to a downloadable GPX file
-2. **Discord Spammer Bot** — Web UI to control a Discord bot that sends alerts for Pokémon spawns
+1. **Coordinates → GPX** — converts a pasted list of lat/lon pairs into a downloadable GPX route file.
+2. **Discord Spawn Bot** — a web UI to start/stop a Discord bot that posts alerts when specific Pokémon spawn inside a configured zone.
+
+The app is split into two services meant to run on the same private network:
+
+- **Web App Backend** — serves the frontend and the public `/api/...` used by the browser.
+- **Data Ingestion Service** — receives Golbat webhooks and hosts the Discord bot itself; only reachable internally.
 
 ## Project Structure
 
 ```
-project-root/
-├── data-service/
-│   ├── main.py                    # FastAPI entry point
-│   ├── config.py                  # Configuration
-│   ├── zones.json                 # Zone definitions (KEEP SECRET)
-│   ├── pois.json                  # POI/allowlist definitions
-│   ├── discord.json               # Discord bot token & channels (KEEP SECRET)
-│   ├── discord_bot/
-│   │   ├── __init__.py
-│   │   ├── config_loader.py       # Loads & validates config files
-│   │   ├── bot.py                 # Discord bot core logic
-│   │   └── routes.py              # Internal API endpoints (/internal/discord/...)
-│   ├── webhooks/
-│   │   ├── __init__.py
-│   │   └── handlers/
-│   │       ├── __init__.py
-│   │       └── pokemon.py         # (TODO) Pokémon event handler
-│   └── storage/
-│       └── __init__.py            # (TODO) Database writer
+csmpogo/
+├── data_service/                   # Internal service: Golbat webhooks + Discord bot
+│   ├── main.py                     # FastAPI entry point
+│   ├── config.py                   # Local config (gitignored — copy from config.py.example)
+│   ├── config.py.example
+│   ├── zones.json                  # Zone definitions (box or Koji-area)
+│   ├── pois.json                   # Pokémon allowlists
+│   ├── discord.json                # Bot token & channel IDs (gitignored — copy from discord.json.example)
+│   ├── discord.json.example
+│   ├── discord_bot/                # Bot state machine, zone/POI matching, config loading
+│   ├── webhooks/                   # POST /webhook — Golbat event receiver
+│   └── storage/                    # Placeholder for future DB writes
 │
-├── web-app/
-│   ├── backend/
-│   │   ├── main.py                # FastAPI entry point
-│   │   ├── config.py              # Backend configuration
-│   │   └── tools/
-│   │       ├── __init__.py
-│   │       ├── tool_registry.py   # Tool discovery & registration
-│   │       ├── coords_to_gpx/
-│   │       │   ├── __init__.py
-│   │       │   └── routes.py      # Tool metadata (no API endpoints)
-│   │       └── discord_bot/
-│   │           ├── __init__.py
-│   │           └── routes.py      # Proxy to data service
-│   └── frontend/
-│       ├── index.html             # (TODO) Main HTML entry
+├── web_app/
+│   ├── backend/                    # Public FastAPI app
+│   │   ├── main.py                 # Entry point; also serves the frontend as static files
+│   │   ├── config.py                # Local config (gitignored — copy from config.py.example)
+│   │   ├── config.py.example
+│   │   └── tools/                  # One package per tool (metadata + routes)
+│   └── frontend/                   # Vanilla HTML/CSS/JS, no build step
+│       ├── index.html              # App shell, sidebar navigation, tool loader
 │       ├── css/
-│       │   └── forms.css          # Form styling
-│       ├── js/
-│       │   ├── app.js             # (TODO) Main app controller
-│       │   └── tools/
-│       │       ├── coords_to_gpx.js
-│       │       └── discord_bot.js
-│       └── views/
-│           ├── coords_to_gpx.html
-│           └── discord_bot.html
+│       ├── js/tools/                # Per-tool client-side logic
+│       └── views/                  # Per-tool HTML fragments
 │
-├── shared/                         # (TODO) Shared Python code
-│   ├── __init__.py
-│   ├── db.py                      # Database connection
-│   ├── models.py                  # SQLAlchemy ORM models
-│   └── config.py                  # Shared configuration
-│
-├── plan.md                         # Implementation plan
-├── .gitignore                      # Git ignore rules
-└── README.md                       # This file
+├── webhook_receiver.py             # Standalone Flask script for manually inspecting raw Golbat payloads (dev use only, not part of the running app)
+├── requirements.txt
+├── .env.example                    # Alternative to per-service config.py files
+├── .gitignore
+├── IMPLEMENTATION_SUMMARY.md        # Build log, API reference, and remaining work
+└── README.md
 ```
 
-## Installation & Setup
+## Setup & Installation
 
-### 1. Prerequisites
+### Prerequisites
 
 - Python 3.9+
-- Pip (Python package manager)
-- MySQL/MariaDB (for the shared database)
+- pip
+- (Future) MySQL/MariaDB — database storage is not implemented yet, see [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md)
 
-### 2. Install Dependencies
-
-Add to `requirements.txt` at the project root:
-
-```
-# Web Framework
-fastapi==0.109.0
-uvicorn[standard]==0.27.0
-httpx==0.25.0
-
-# Discord Bot
-discord.py==2.3.2
-
-# Geolocation & S2 Geometry
-s2sphere==0.2.13
-
-# Database (when implemented)
-sqlalchemy==2.0.0
-pymysql==1.1.0
-
-# Utilities
-python-dotenv==1.0.0
-```
-
-Then install:
+### 1. Install dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 3. Configure Discord Bot
+### 2. Configure the services
 
-1. **Create a Discord bot** at [Discord Developer Portal](https://discord.com/developers/applications)
-2. **Copy the bot token** (keep it secret!)
-3. **Create/note Discord channel IDs** where alerts should be sent
-4. **Edit `data-service/discord.json`**:
+Each service reads settings from its own `config.py`, which can be overridden by environment variables. Copy the example files and adjust as needed:
+
+```bash
+cp data_service/config.py.example data_service/config.py
+cp web_app/backend/config.py.example web_app/backend/config.py
+cp .env.example .env
+```
+
+Key settings:
+
+| Setting | Where | Purpose |
+|---|---|---|
+| `DATA_SERVICE_PORT` | `data_service/config.py` | Port the Data Ingestion Service listens on (default `5000`) |
+| `KOJI_HOST` / `KOJI_PORT` / `KOJI_TIMEOUT` | `data_service/config.py` | Koji instance used to resolve `koji_area` zones to S2 cells |
+| `DATABASE_URL` | `.env` | Reserved for future DB integration; not currently used |
+| `DATA_SERVICE_URL` | `web_app/backend/config.py` | Where the Web App Backend reaches the Data Ingestion Service |
+| `WEB_APP_PORT` | `web_app/backend/config.py` | Port the Web App Backend listens on (default `8000`) |
+| `DEBUG` | either | Enables debug mode; keep `false` in production |
+
+`config.py` and `.env` are gitignored — never commit real values.
+
+### 3. Configure the Discord bot
+
+1. Create a bot at the [Discord Developer Portal](https://discord.com/developers/applications) and copy its token.
+2. Note the Discord channel IDs you want alerts posted to.
+3. Copy the template and fill it in:
+
+```bash
+cp data_service/discord.json.example data_service/discord.json
+```
 
 ```json
 {
@@ -121,295 +103,90 @@ pip install -r requirements.txt
 }
 ```
 
-**⚠️ IMPORTANT:** Add `discord.json` and `master-latest-raw.json` to `.gitignore` to avoid committing secrets.
+`discord.json` is gitignored — keep the token secret.
 
-### 4. Configure Zones & POIs
+### 4. Configure zones & POIs
 
-Edit `data-service/zones.json` and `data-service/pois.json` with your custom zones and Pokémon allowlists. Examples are provided.
+Edit `data_service/zones.json` and `data_service/pois.json`:
 
-### 5. Environment Variables (Optional)
+- **Zones** define the area to monitor. Two types are supported:
+  - `"type": "box"` — a lat/lon bounding rectangle (`min`/`max`).
+  - `"type": "koji_area"` — an area fetched from a Koji instance and converted to S2 cells at runtime.
+- **POIs** define an allowlist of `{id, form}` Pokémon pairs to alert on.
 
-Create a `.env` file in the project root:
-
-```bash
-# Data Service
-DATA_SERVICE_PORT=5000
-DATA_SERVICE_URL=http://localhost:5000
-DEBUG=False
-
-# Web App Backend
-WEB_APP_PORT=8000
-DEBUG=False
-
-# Database (when implemented)
-DATABASE_URL=mysql+pymysql://user:password@localhost/pogo_db
-KOJI_HOST=192.168.0.247
-KOJI_PORT=8080
-```
+Example entries are already present in both files.
 
 ## Running the Services
 
-### Start Data Ingestion Service
+Both services need to be running for the app to be fully functional.
+
+### Data Ingestion Service (internal)
 
 ```bash
 python -m uvicorn data_service.main:app --port 5000 --reload
 ```
 
-Visit: http://localhost:5000/
+Health check: http://localhost:5000/health
 
-### Start Web App Backend
+### Web App Backend (public-facing)
 
 ```bash
 python -m uvicorn web_app.backend.main:app --port 8000 --reload
 ```
 
-Visit: http://localhost:8000/
+Health check: http://localhost:8000/health
 
-### Health Checks
-
-- Data Service: http://localhost:5000/health
-- Web App: http://localhost:8000/health
-
-## API Endpoints
-
-### Web App Backend (`/api/tools/...`)
-
-#### List All Tools
-```
-GET /api/tools
-```
-
-**Response:**
-```json
-{
-  "tools": [
-    {
-      "id": "coords_to_gpx",
-      "name": "Coordinates to GPX",
-      "description": "...",
-      "has_map": false,
-      "icon": "download",
-      "mobile_optimized": true
-    },
-    {
-      "id": "discord_bot",
-      "name": "Discord Spammer Bot",
-      "description": "...",
-      "has_map": false,
-      "icon": "bell",
-      "mobile_optimized": true
-    }
-  ]
-}
-```
-
-#### Discord Bot - Get Configs
-```
-GET /api/tools/discord_bot/configs
-```
-
-**Response:**
-```json
-{
-  "zones": {
-    "steJulieDomaine": {...},
-    "goFestChicago": {...}
-  },
-  "pois": {
-    "current": {...},
-    "goFestChicago": {...}
-  },
-  "channels": {
-    "alerts": 1513202613456338984,
-    "gofestspawns": 1513229477801627658
-  }
-}
-```
-
-#### Discord Bot - Start
-```
-POST /api/tools/discord_bot/start
-
-{
-  "zone": "goFestChicago",
-  "poi": "current",
-  "channel_id": 1513202613456338984
-}
-```
-
-**Response:**
-```json
-{
-  "state": "running",
-  "zone": "goFestChicago",
-  "poi": "current",
-  "channel_id": 1513202613456338984,
-  "discord_connected": true,
-  "error_msg": null,
-  "s2_cells_loaded": 0
-}
-```
-
-#### Discord Bot - Stop
-```
-POST /api/tools/discord_bot/stop
-```
-
-#### Discord Bot - Get Status
-```
-GET /api/tools/discord_bot/status
-```
-
-### Data Ingestion Service (Internal Only)
-
-**Note:** These endpoints are internal (`/internal/...`) and should not be exposed externally. They are accessed by the Web App Backend for proxying.
-
-- `GET /internal/discord/configs`
-- `POST /internal/discord/start`
-- `POST /internal/discord/stop`
-- `GET /internal/discord/status`
+The Web App Backend also serves the frontend, so once it's running the app itself is available at http://localhost:8000/.
 
 ## Using the Tools
 
-### Coordinates-to-GPX
+### Coordinates → GPX
 
-1. Open the web app and navigate to the **Coordinates to GPX** tool
-2. Enter a route name (e.g., "Community Day Route")
-3. Paste coordinate pairs (one per line, `latitude,longitude`):
+1. Open the app and select **Coordinates to GPX**.
+2. Enter a route name (e.g. "Community Day Route").
+3. Paste coordinate pairs, one per line, as `latitude,longitude`:
    ```
    40.7128,-74.0060
    40.7138,-74.0050
    40.7148,-74.0040
    ```
-4. Click **Download GPX**
-5. A `.gpx` file is downloaded with your route
+4. Click **Download GPX** — a `{routeName}.gpx` file is downloaded, using the GPX route format (`<rte>/<rtept>`), compatible with navigation apps like ReactMap.
 
-**Format:** GPX route (`<rte>/<rtept>`) — compatible with navigation apps like ReactMap
+### Discord Spawn Bot
 
-### Discord Spammer Bot
+1. Open the app and select **Discord Spammer Bot**.
+2. Click **Reload Configurations** to load the zones, POIs, and channels from `data_service`.
+3. Select a **Zone**, a **POI** allowlist, and a **Discord Channel**.
+4. Click **Start Bot**.
+5. The status badge turns green once the bot has connected to Discord; it will then post an embed to the selected channel for each matching spawn.
+6. Click **Stop Bot** to shut it down.
 
-1. Open the web app and navigate to the **Discord Spammer Bot** tool
-2. Click **Reload Configurations** to load zones, POIs, and channels
-3. Select a **Zone** (area to monitor)
-4. Select a **POI** (Pokémon allowlist filter)
-5. Select a **Discord Channel** (where alerts will be posted)
-6. Click **Start Bot**
-7. Status badge turns **green** when connected
-8. Bot sends Discord embeds whenever a matching Pokémon is spotted
-9. Click **Stop Bot** to shut down
-
-**Status Indicators:**
-- 🟢 **Running** — Bot is active and monitoring
-- 🟡 **Starting/Stopping** — Transition in progress
-- 🔴 **Offline** — Bot is not running
-- 🟠 **Error** — Bot encountered an error (check error message)
-
-## TODO & Future Work
-
-### Phase 1 (Coordinates-to-GPX) — ✅ DONE
-- [x] Backend tool registration
-- [x] Frontend HTML & JS
-- [x] GPX generation & download
-- [x] Coordinate validation
-- [x] LocalStorage persistence
-
-### Phase 2A (Discord Bot - Data Service)
-- [x] Config loader (zones, POIs, Discord)
-- [x] Bot core logic (state machine, zone checking, Discord integration)
-- [x] Internal API routes
-- [ ] Webhook handler hook-up (integrate with pokemon.py handler)
-- [ ] S2 geometry support (Koji area zones) — stubbed, needs implementation
-- [ ] Pokémon name loader from master file
-
-### Phase 2B (Discord Bot - Web Backend)
-- [x] Proxy routes to Data Service
-- [x] Tool registration
-
-### Phase 2C (Discord Bot - Frontend)
-- [x] HTML tool panel
-- [x] JS UI controller
-- [x] Config loading & dropdown population
-- [x] Start/stop buttons
-- [x] Status polling & badge
-- [x] Error handling
-
-### Common Next Steps
-
-1. **Integrate with actual Golbat webhooks:**
-   - Implement `data-service/webhooks/routes.py` (POST /webhook endpoint)
-   - Implement `data-service/webhooks/handlers/pokemon.py`
-   - Call `discord_bot.bot.check_and_notify()` from handler
-
-2. **Set up database:**
-   - Implement `shared/models.py` with SQLAlchemy ORM
-   - Create database schema in `db/schema.sql`
-   - Implement `data-service/storage/writer.py`
-
-3. **Build main frontend:**
-   - Create `web-app/frontend/index.html`
-   - Implement `web-app/frontend/js/app.js` with:
-     - Tool navigation (sidebar/hamburger menu)
-     - Tool switching & display
-     - Tool module loading
-
-4. **Add more tools:**
-   - **Show-in-ReactMap** (list areas from Koji, open in ReactMap)
-   - **Showcase Map** (map of Pokémon showcase data)
-
-5. **Mobile optimization:**
-   - Test on actual mobile devices
-   - Responsive CSS (already structured for mobile-first)
-   - Touch gestures
-
-6. **Optional: PWA & offline support**
-   - Service Worker for caching
-   - Manifest.json for install
-   - Offline fallback
+**Status indicators:**
+- 🔴 Offline — bot idle, not running
+- 🟡 Starting/Stopping — transition in progress
+- 🟢 Running — connected and monitoring
+- 🟠 Error — check the displayed error message
 
 ## Troubleshooting
 
-### Discord Bot Won't Connect
+**Discord bot won't connect**
+- Check the token in `data_service/discord.json`.
+- Verify the channel IDs are correct and the bot has permission to post in them.
+- Check the Data Ingestion Service logs for connection errors.
 
-1. **Check the bot token** in `discord.json` — is it correct?
-2. **Verify channel IDs** — are they valid Discord channel IDs?
-3. **Check Discord permissions** — does the bot have permission to send messages in those channels?
-4. **Check logs** for error messages
+**GPX file won't download**
+- Check the browser console (F12) for JavaScript errors.
+- Verify coordinates are `lat,lon` per line.
+- Route name must not be empty.
 
-### GPX File Won't Download
-
-1. **Check browser console** (F12) for JavaScript errors
-2. **Verify coordinates format** — should be `lat,lon` (comma-separated, decimals allowed)
-3. **Check route name** — it must not be empty
-
-### Web App Backend Can't Connect to Data Service
-
-1. **Is the Data Service running?** Check http://localhost:5000/health
-2. **Check `DATA_SERVICE_URL`** in `web-app/backend/config.py` — is it correct?
-3. **Check firewall** — port 5000 must be accessible
+**Web App Backend can't reach the Data Service**
+- Confirm the Data Ingestion Service is running (http://localhost:5000/health).
+- Check `DATA_SERVICE_URL` in `web_app/backend/config.py`.
+- Check firewall rules if the two services run on different hosts.
 
 ## Security Notes
 
-- **Secrets:** `discord.json`, `config files with DB credentials` must be in `.gitignore`
-- **Internal Endpoints:** `/internal/...` endpoints should only be accessible from the Web App Backend (both services on private network per spec)
-- **CORS:** Currently allows all origins for development. Restrict in production.
-- **No authentication:** Per project spec, all services are on a private network. Add auth if exposed publicly.
-
-## Performance Considerations
-
-- **Discord Bot:** Runs in a daemon thread with its own asyncio event loop (proven pattern from reference)
-- **Config Caching:** Configs are loaded once on bot start, not re-fetched per webhook
-- **S2 Cells:** For `koji_area` zones, S2 cells are cached in memory to avoid API calls per event
-- **Status Polling:** Frontend polls bot status every 10 seconds (configurable)
-
-## References
-
-- [FastAPI Documentation](https://fastapi.tiangolo.com/)
-- [Discord.py Documentation](https://discordpy.readthedocs.io/)
-- [Golbat Webhooks](https://github.com/UnownHash/Golbat/blob/main/webhooks.md)
-- [S2 Geometry](https://github.com/sidewalklabs/s2geometry)
-- [GPX File Format](https://www.topografix.com/GPX/1/1/)
-
----
-
-**Last Updated:** 2026-06-26  
-**Status:** Implementation Complete (Core Features)
+- `discord.json`, `config.py`, and `.env` contain secrets and must stay out of version control (already gitignored).
+- `/internal/...` endpoints on the Data Ingestion Service are meant to be reachable only from the Web App Backend — keep that service off any public network.
+- CORS currently allows all origins, for development convenience; restrict this before exposing the app beyond a private network.
+- There is no authentication layer. This app is designed to run on a private/trusted network only.

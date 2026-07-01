@@ -18,6 +18,10 @@
     "type": "koji_area",
     "koji_instance": "gSteJulieDomaine"
   },
+  "gSteJulie": {
+    "type": "koji_area",
+    "koji_instance": "gSteJulie"
+  },
   "goFestChicago": {
     "type": "koji_area",
     "koji_instance": "goFestChicago"

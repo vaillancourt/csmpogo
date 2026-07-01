@@ -4,6 +4,14 @@
       {
         "id": 482,
         "form": 1853
+      }
+    ]
+  },
+  "current2": {
+    "pokemon": [
+      {
+        "id": 482,
+        "form": 1853
       },
       {
         "id": 931,
@@ -20,26 +28,6 @@
       {
         "id": 931,
         "form": 2988
-      }
-    ]
-  },
-  "goFestChicago": {
-    "pokemon": [
-      {
-        "id": 26,
-        "form": 50
-      }
-    ]
-  },
-  "goFestChicago2": {
-    "pokemon": [
-      {
-        "id": 147,
-        "form": 190
-      },
-      {
-        "id": 26,
-        "form": 50
       }
     ]
   }
