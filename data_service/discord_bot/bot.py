@@ -513,22 +513,20 @@ class DiscordBotManager:
 
     def _load_pokemon_names(self) -> None:
         """
-        Load Pokemon ID -> name mapping from master file.
-        
-        TODO: Implement actual master file loading.
-        For now, this is a stub with a few common Pokemon.
+        Load Pokemon ID -> name mapping from the master data file.
         """
-        # Stub: minimal Pokemon name mapping
-        self.pokemon_names = {
-            1: "Bulbasaur",
-            4: "Charmander",
-            7: "Squirtle",
-            25: "Pikachu",
-            26: "Raichu",
-            147: "Dratini",
-            149: "Dragonite",
-            # Add more as needed or load from master file
-        }
+        master_path = config.MASTER_FILE_PATH
+        with open(master_path, "r") as f:
+            master_data = json.load(f)
+
+        pokemon_names: Dict[int, str] = {}
+        for poke_id_str, poke_data in master_data.get("pokemon", {}).items():
+            pokemon_names[int(poke_id_str)] = poke_data.get(
+                "pokemonName", f"Pokemon {poke_id_str}"
+            )
+
+        logger.info("Loaded %d pokemon names from %s", len(pokemon_names), master_path)
+        self.pokemon_names = pokemon_names
 
 
 # Global bot manager instance
