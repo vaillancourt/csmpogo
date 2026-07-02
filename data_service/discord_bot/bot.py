@@ -11,7 +11,7 @@ import json
 import logging
 import threading
 from pathlib import Path
-from typing import Dict, Any, Optional, Callable, List
+from typing import Dict, Any, Optional, Callable, List, NamedTuple
 
 import discord
 from discord.ext import commands
@@ -23,6 +23,13 @@ from data_service import config
 from .config_loader import get_loader
 
 logger = logging.getLogger(__name__)
+
+
+class PokemonInfo(NamedTuple):
+    """Pokemon base name plus its known forms (formId -> formName)."""
+    name: str
+    forms: Dict[int, str]
+
 
 class DiscordBotManager:
     """
@@ -48,7 +55,7 @@ class DiscordBotManager:
         
         # Cached configuration
         self.s2_cells: set[int] = set()  # For koji_area zones
-        self.pokemon_names: Dict[int, str] = {}  # ID -> name mapping
+        self.pokemon_data: Dict[int, PokemonInfo] = {}  # pokemonId -> (pokemonName, {formId: formName})
         self.zones: Dict[str, Dict] = {}
         self.pois: Dict[str, Dict] = {}
         self.channels_config: Dict[str, int] = {}
@@ -101,8 +108,8 @@ class DiscordBotManager:
                 self._fetch_s2_cells_from_koji(koji_instance)
                 logger.info(f"Loaded {len(self.s2_cells)} S2 cells for zone '{zone}'")
 
-            # Load Pokemon names (stub for now - would load from master file)
-            self._load_pokemon_names()
+            # Load Pokemon names and forms from the master data file
+            self._load_pokemon_data()
 
             # Start bot thread
             self._start_bot_thread()
@@ -236,7 +243,7 @@ class DiscordBotManager:
                 return False
 
             # Send Discord notification
-            pokemon_name = self.pokemon_names.get(pokemon_id, f"Pokemon {pokemon_id}")
+            pokemon_name = self.get_pokemon_display_name(pokemon_id, form)
             message_embed = self._format_discord_message(pokemon_name, latitude, longitude)
             message_sent = self._send_to_discord(message_embed)
 
@@ -511,22 +518,49 @@ class DiscordBotManager:
             logger.error("Error fetching S2 cells from Koji: %s", e)
             raise
 
-    def _load_pokemon_names(self) -> None:
+    def _load_pokemon_data(self) -> None:
         """
-        Load Pokemon ID -> name mapping from the master data file.
+        Load Pokemon name and form data from the master data file.
+
+        Populates self.pokemon_data: pokemonId -> PokemonInfo(name, {formId: formName}).
         """
         master_path = config.MASTER_FILE_PATH
         with open(master_path, "r") as f:
             master_data = json.load(f)
 
-        pokemon_names: Dict[int, str] = {}
-        for poke_id_str, poke_data in master_data.get("pokemon", {}).items():
-            pokemon_names[int(poke_id_str)] = poke_data.get(
-                "pokemonName", f"Pokemon {poke_id_str}"
-            )
+        all_forms = master_data.get("forms", {})
 
-        logger.info("Loaded %d pokemon names from %s", len(pokemon_names), master_path)
-        self.pokemon_names = pokemon_names
+        pokemon_data: Dict[int, PokemonInfo] = {}
+        for poke_id_str, poke_data in master_data.get("pokemon", {}).items():
+            pokemon_name = poke_data.get("pokemonName", f"Pokemon {poke_id_str}")
+
+            forms: Dict[int, str] = {}
+            for form_id in poke_data.get("forms", []):
+                form_data = all_forms.get(str(form_id))
+                if form_data:
+                    forms[int(form_id)] = form_data.get("formName", "Normal")
+
+            pokemon_data[int(poke_id_str)] = PokemonInfo(name=pokemon_name, forms=forms)
+
+        logger.info("Loaded %d pokemon (with forms) from %s", len(pokemon_data), master_path)
+        self.pokemon_data = pokemon_data
+
+    def get_pokemon_display_name(self, pokemon_id: int, form_id: int) -> str:
+        """
+        Get the display name for a Pokemon, including its form when relevant.
+
+        A "Normal" form (or an unrecognized form) is not shown; any other form
+        is appended in parentheses, e.g. "Vulpix (Alola)".
+        """
+        pokemon_info = self.pokemon_data.get(pokemon_id)
+        if not pokemon_info:
+            return f"Pokemon {pokemon_id}"
+
+        form_name = pokemon_info.forms.get(form_id)
+        if not form_name or form_name == "Normal":
+            return pokemon_info.name
+
+        return f"{pokemon_info.name} ({form_name})"
 
 
 # Global bot manager instance
